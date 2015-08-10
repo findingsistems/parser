@@ -131,8 +131,8 @@ var parse_cycle = function() {
     client.query('INSERT INTO price_files (user__id, path, name, status, active, info, price_type__id) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id', to_price_files, function(err, insert_result) {
         if (err) return console.error(err);
 
-        if (insert_result[0].id)
-            price_files_id = insert_result[0].id;
+        if (insert_result.rows[0].id)
+            price_files_id = insert_result.rows[0].id;
         else
             return console.log("### ERROR on get price_files_id");
 
