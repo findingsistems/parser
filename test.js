@@ -128,7 +128,7 @@ var parse_cycle = function() {
         {"goods_quality":"1","delivery_time":"1","discount":"0"}, //todo check format
         3
     ];
-    client.query('INSERT INTO price_files (user_id, path, name, status, active, info, price_type__id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id', to_price_files, function(err, insert_result) {
+    client.query('INSERT INTO price_files (user__id, path, name, status, active, info, price_type__id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id', to_price_files, function(err, insert_result) {
         if (err) return console.error(err);
 
         if (insert_result[0].id)
