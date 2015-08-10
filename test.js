@@ -1,5 +1,4 @@
 var fs = require("fs"),
-    http = require("http"),
     unzip = require("unzip"),
     Transform = require('stream').Transform,
     JSFtp = require("jsftp"),
@@ -11,6 +10,10 @@ var fs = require("fs"),
 var conString = "postgres://autogiper:autogiper@localhost/autogiper";
 var client = new pg.Client(conString);
 client.connect();
+
+var user_id = 1575,
+    price_files_id = 0,
+    parse_cycle_active = false;
 
 var ftp = new JSFtp({
     host: "ftp.parttrade.ru",
@@ -39,12 +42,12 @@ var transform_cb = function(data, encoding, done) {
     var count       = ~~data[3];
     var price       = (~~data[4]);
     var delivere    = data[5] || ""; //todo leave only numbers and "-"
-    var str = "\""+manufacturer+t+code+t+name+t+count+t+price+t+delivere+"\"";
+    var str = "\""+manufacturer+t+code+t+name+t+count+t+price+t+delivere+t+price_files_id+t+user_id+"\"";
     this.push(str+"\n");
     //this.push(data.join(";")+"\n");
     done();
 };
-var query = 'COPY prices_parser (manufacturer, code, name, count, price, delivere) FROM STDIN CSV';
+var query = 'COPY prices_wholesale (manufacturer, code, name, count, price, delivere, price_files__id, user__id) FROM STDIN CSV';
 
 var processed_file = async.queue(function (task, callback) {
     console.log('each preprocessed', task.name);
@@ -53,7 +56,7 @@ var processed_file = async.queue(function (task, callback) {
     parser._transform = transform_cb;
     var stream_db = client.query(copyFrom(query));
     stream_db.on("error", function(err) {
-        console.log("#ERROR", err)
+        console.log("#ERROR stream_db", err)
     });
     stream_db.on("end", function() {
         console.log("###END##");
@@ -71,7 +74,7 @@ var processed_file = async.queue(function (task, callback) {
             console.log('#finish', new Date());
         })
         .on('error', function (err) {
-            console.log('error', err);
+            console.log('#ERROR task.entry', err);
             callback();
             if (preprocessed_list.length)
                 preprocessed_file();
@@ -80,6 +83,7 @@ var processed_file = async.queue(function (task, callback) {
         });
 }, 1);
 processed_file.drain = function() {
+    parse_cycle_active = false;
     console.log('all items have been processed');
 };
 
@@ -113,21 +117,57 @@ var preprocessed_file = function(file_name_new) {
     }
 };
 
-ftp.ls(".", function(err, res) {
-    async.eachLimit(res, 1, function(file, cb) {
-        //if (file.name != "autogiper_stock.zip" && file.name != "zzap_stock.zip")
-        if (file.name != "autogiper_all_csv.zip")
-            return cb();
+var parse_cycle = function() {
+    console.log("PARSE CYCLE", Date.now());
+    var to_price_files = [
+        user_id,
+        "ftp.parttrade.ru/autogiper_all_csv.zip",
+        "autogiper_all_csv.zip",
+        "Обработка завершена",
+        1,
+        {"goods_quality":"1","delivery_time":"1","discount":"0"}, //todo check format
+        3
+    ];
+    client.query('INSERT INTO price_files (user_id, path, name, status, active, info, price_type__id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id', to_price_files, function(err, insert_result) {
+        if (err) return console.error(err);
 
-        console.log("start download", file.name);
-        ftp.get("./"+file.name, "./temp/"+file.name, function(err) {
-            if (err) return cb(err);
-            console.log('downloaded', "./temp/"+file.name);
-            preprocessed_file(file.name);
-            cb();
+        if (insert_result[0].id)
+            price_files_id = insert_result[0].id;
+        else
+            return console.log("### ERROR on get price_files_id");
+
+        client.query('DELETE FROM prices_wholesale WHERE user__id=$1', [user_id], function(err) {
+            if (err) return console.error(err);
+
+            ftp.ls(".", function (err, res) {
+                async.eachLimit(res, 1, function (file, cb) {
+                    if (file.name !== "autogiper_all.zip")
+                        return cb();
+
+                    console.log("start download", file.name);
+                    ftp.get("./" + file.name, "./temp/" + file.name, function (err) {
+                        if (err) return cb(err);
+                        console.log('downloaded', "./temp/" + file.name);
+                        preprocessed_file(file.name);
+                        cb();
+                    });
+                }, function (err) {
+                    if (err) return console.log(err);
+                    console.log('all files were downloaded');
+                });
+            });
         });
-    }, function(err) {
-        if (err) return console.log(err);
-        console.log('all files were downloaded');
     });
-});
+};
+
+if (!fs.existsSync("./temp/"))
+    fs.mkdirSync("./temp");
+
+parse_cycle();
+
+var parse_intv = setInterval(function(){
+    if (parse_cycle_active) return console.error("Not finished prev cycle!");
+
+    parse_cycle_active = true; //todo on error set false
+    parse_cycle();
+}, 864e5);
