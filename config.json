@@ -1,0 +1,16 @@
+{
+  "list": [
+    {
+      "name": "test_1 91.197.10.216",
+      "type": "http",
+      "host": "http://91.197.10.216",
+      "path": "/files/",
+      "file_selector": "a[href^='/files/']",
+      "file_extension": ["zip", "csv", "xls"],
+      "file_list": [],
+      "file_mask": [""]
+    }
+  ],
+  "check_interval": 86400,
+  "max_file_transmission" : 10
+}
