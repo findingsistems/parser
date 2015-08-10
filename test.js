@@ -37,11 +37,11 @@ var transform_cb = function(data, encoding, done) {
     if (isNaN(+data[3]))
         return done();
     var manufacturer= data[0];
-    var code        = data[1]; //todo leave only numbers and symbols
+    var code        = data[1].replace(/[^a-zA-Z0-9]/gi, "");
     var name        = data[2];
     var count       = ~~data[3];
     var price       = (~~data[4]);
-    var delivere    = data[5] || ""; //todo leave only numbers and "-"
+    var delivere    = (data[5] || "").replace(/[^0-9\-]/gi, "");
     var str = "\""+manufacturer+t+code+t+name+t+count+t+price+t+delivere+t+price_files_id+t+user_id+"\"";
     this.push(str+"\n");
     //this.push(data.join(";")+"\n");
@@ -118,19 +118,20 @@ var preprocessed_file = function(file_name_new) {
 };
 
 var parse_cycle = function() {
-    console.log("PARSE CYCLE", Date.now());
+    console.log("PARSE CYCLE", new Date());
     var to_price_files = [
         user_id,
         "ftp.parttrade.ru/autogiper_all_csv.zip",
         "autogiper_all_csv.zip",
         "Обработка завершена",
         1,
-        {"goods_quality":"1","delivery_time":"1","discount":"0"}, //todo check format
+        {"goods_quality":"1","delivery_time":"1","discount":"0"},
         3
     ];
     client.query('INSERT INTO price_files (user__id, path, name, status, active, info, price_type__id) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id', to_price_files, function(err, insert_result) {
         if (err) return console.error(err);
 
+        console.log('price_files_id', insert_result.rows[0].id)
         if (insert_result.rows[0].id)
             price_files_id = insert_result.rows[0].id;
         else
