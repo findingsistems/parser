@@ -5,7 +5,7 @@ var fs = require("fs"),
     async = require("async"),
     pg = require('pg'),
     copyFrom = require('pg-copy-streams').from,
-    csv = require('csv-streamify-mod');
+    csv = require('fast-csv-mod');
 
 var conString = "postgres://autogiper:autogiper@localhost/autogiper";
 var client = new pg.Client(conString);
@@ -21,12 +21,14 @@ var ftp = new JSFtp({
     pass: "auto.ru"
 });
 
-var csv_opts = {
-    delimiter: ',',
-    newline: '\n',
-    quote : '\"',
-    objectMode: true
-};
+ var csv_opts = {
+     headers:    false,
+     delimiter:  ',',
+     quote :     '\"',
+     escape:     '\\',
+     objectMode: true
+ };
+
 var transform_cb = function(data, encoding, done) {
     // id | code | relevant_code | manufacturer | name | count | price | price_files_id | user_id | fts | delivere
     if ((!data[2] || data[2].length > 300) || (!data[3] || data[3].length > 150) || (!data[4] || data[4].length > 150) || (!data[5] || data[5].length > 150)) {
@@ -140,6 +142,7 @@ var parse_cycle = function() {
         client.query('DELETE FROM prices_wholesale WHERE user__id=$1', [user_id], function(err) {
             if (err) return console.error(err);
 
+            console.log("Cleared prev rows user_id="+user_id, new Date());
             ftp.ls(".", function (err, res) {
                 async.eachLimit(res, 1, function (file, cb) {
                     if (file.name !== "autogiper_all.zip")
