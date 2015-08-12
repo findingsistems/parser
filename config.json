@@ -1,6 +1,25 @@
 {
   "list": [
     {
+      "name" : "Task ftp.parttrade.ru",
+      "type" : "ftp",
+      "host" : "ftp.parttrade.ru",
+      "user" : "auto.ru",
+      "pass" : "auto.ru",
+      "path" : ".",
+      "user_id" : 1575,
+      "file_extension" : ["zip", "csv", "xls"],
+      "file_list" : [],
+      "file_mask" : [""],
+      "csv_opts" : {
+        "headers"   : false,
+        "delimiter" : ",",
+        "quote "    : "\"",
+        "escape"    : "\\",
+        "objectMode": true
+      }
+    },
+    {
       "name": "test_1 91.197.10.216",
       "type": "http",
       "host": "http://91.197.10.216",
@@ -12,5 +31,7 @@
     }
   ],
   "check_interval": 86400,
-  "max_file_transmission" : 10
+  "max_file_transmission" : 10,
+  "db_connection_string" : "postgres://autogiper:autogiper@localhost/autogiper",
+  "temp_folder" : "./temp"
 }
