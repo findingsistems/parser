@@ -4,13 +4,22 @@ var fs = require("fs"),
     Transform = require('stream').Transform,
     JSFtp = require("jsftp"),
     async = require("async"),
+    // csv = require('fast-csv-mod');
+    // csv = require('csv-streamify-mod');
     csv = require('csv-parser');
-//var csv_opts = {
+// var csv_opts = {
+//     headers:    false, 
+//     delimiter:  ',',
+//     quote :     '\"',
+//     escape:     '\\',
+//     objectMode: true
+// };
+// var csv_opts = {
 //    delimiter: ',',
 //    newline: '\n',
 //    quote : '\"',
 //    objectMode: true
-//};
+// };
 var csv_opts = {
     raw: false,
     separator: ',',
@@ -20,10 +29,10 @@ var csv_opts = {
 };
 var transform_cb = function(data, encoding, done) {
     // id | code | relevant_code | manufacturer | name | count | price | price_files_id | user_id | fts | delivere
-    //if ((!data[2] || data[2].length > 300) || (!data[3] || data[3].length > 150) || (!data[4] || data[4].length > 150) || (!data[5] || data[5].length > 150)) {
-    //    console.log('###ALERT###');
-    //    console.log(data);
-    //}
+    if ((!data[2] || data[2].length > 300) || (!data[3] || data[3].length > 150) || (!data[4] || data[4].length > 150) || (!data[5] || data[5].length > 150)) {
+       console.log('###ALERT###');
+       // console.log(data);
+    }
     var t = "\",\"";
     if (isNaN(+data[3]))
         return done();
@@ -60,6 +69,7 @@ parser.on("data", function(data){
     out.write(data);
 })
 .on('end', function () {
+    console.log("parser end",  ~~((Date.now() - ts_1)/1000));
     out.end();
 });
 var csvToJson = csv(csv_opts); //todo make better
@@ -75,6 +85,7 @@ csvToJson.on("data", function(data){
     parser.write(data);
 })
 .on('end', function () {
+    console.log("csvToJson end");
     parser.end();
 });
 
@@ -83,7 +94,7 @@ ts_1 = Date.now();
 fs.createReadStream('temp/' + "autogiper_all_15.csv")
     .on('data', function(chunk){
         if (c_o%tick === 0) {
-            console.log('read 1000')
+            console.log('read '+tick)
             ts_2 = Date.now();
         }
         c_o++;
@@ -96,7 +107,7 @@ fs.createReadStream('temp/' + "autogiper_all_15.csv")
         console.log('error ReadStream', err);
     });
 out.on('finish', function(){
-    console.log('#finish', ~~((Date.now() - ts_1)/1000));
+    console.log('#finish out');
 });
 //fs.createReadStream('temp/' + "autogiper_all_15.csv")
 //    .pipe(csvToJson)
