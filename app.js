@@ -32,12 +32,7 @@ var read_config = function () {
 };
 read_config();
 
-var client = new pg.Client(config.db_connection_string); //todo check loss connection
-//todo maybe close, and reopen on cycle
-client.connect();
-
-if (!fs.existsSync(config.temp_folder))
-    fs.mkdirSync(config.temp_folder);
+var db_client = null;
 //var task_processed = function () {
 //    var task = config.list.shift();
 //    console.log("processed task", task.name, "|", new Date());
@@ -193,7 +188,7 @@ var processed_file = async.queue(function (task, callback) {
     var csvToJson = csv(csv_opts); //todo make better
     var parser = new Transform({objectMode: true}); //todo make better
     parser._transform = transform_cb;
-    var stream_db = client.query(copyFrom(query));
+    var stream_db = db_client.query(copyFrom(query));
     stream_db.on("error", function(err) {
         console.log("#ERROR stream_db", err)
     });
@@ -267,7 +262,7 @@ var parse_cycle = function() {
         {"goods_quality":"1","delivery_time":"1","discount":"0"},
         3
     ];
-    client.query('INSERT INTO price_files (user__id, path, name, status, active, info, price_type__id) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id', to_price_files, function(err, insert_result) {
+    db_client.query('INSERT INTO price_files (user__id, path, name, status, active, info, price_type__id) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id', to_price_files, function(err, insert_result) {
         if (err) return console.error(err);
 
         console.log('price_files_id', insert_result.rows[0].id)
@@ -276,7 +271,7 @@ var parse_cycle = function() {
         else
             return console.log("### ERROR on get price_files_id");
 
-        client.query('DELETE FROM prices_wholesale WHERE user__id=$1', [user_id], function(err) {
+        db_client.query('DELETE FROM prices_wholesale WHERE user__id=$1', [user_id], function(err) {
             if (err) return console.error(err);
 
             console.log("Cleared prev rows user_id="+user_id, new Date());
@@ -305,10 +300,33 @@ parse_cycle();
 
 var parse_intv = setInterval(function(){
     if (parse_cycle_active) return console.error("Not finished prev cycle!");
+    console.log('# Start parse cycle', new Date());
 
     parse_cycle_active = true; //todo on error set false
+    read_config();
+    db_client = new pg.Client(config.db_connection_string);
+    db_client.connect();
+
+    if (!fs.existsSync(config.temp_folder))
+        fs.mkdirSync(config.temp_folder);
+
+    async.eachLimit(config.list, 1, function (task, cb) {
+        console.log("start task", task.name, new Date());
+    }, function (err) {
+        if (err) return console.log(err);
+        console.log('# All task were finished', new Date());
+        db_client.end();
+    });
     parse_cycle();
 }, 864e5);
+
+
+//ftp.get("./" + file.name, config.temp_folder + file.name, function (err) {
+//    if (err) return cb(err);
+//    console.log('downloaded', config.temp_folder + file.name);
+//    preprocessed_file(file.name);
+//    cb();
+//});
 
 /*
 - each on config.list, use async
