@@ -170,78 +170,82 @@ var transform_cb = function (data, encoding, done) {
   var count = ~~data[3];
   var price = (~~data[4]);
   var delivere = (data[5] || "").replace(/[^0-9\-]/gi, "");
-  var str = "\"" + manufacturer + t + code + t + name + t + count + t + price + t + delivere + t + price_files_id + t + user_id + "\"";
+  var str = "\"" + manufacturer + t + code + t + name + t + count + t + price + t + delivere + t + price_files_id + t + user_id + "\""; //fixme GET user_id and price_files_id
   this.push(str + "\n");
   done();
 };
 var query = 'COPY prices_wholesale (manufacturer, code, name, count, price, delivere, price_files__id, user__id) FROM STDIN CSV';
 
-var processed_file = async.queue(function (task, callback) {
-  console.log('each preprocessed', task.name);
-  var csvToJson = csv(csv_opts); //todo make better
+var processed_file = async.queue(function (obj, callback) {
+  var csvToJson = csv(obj.task.csv_opts); //todo make better
   var parser = new Transform({objectMode: true}); //todo make better
   parser._transform = transform_cb;
   var stream_db = db_client.query(copyFrom(query));
   stream_db.on("error", function (err) {
-    console.log("#ERROR stream_db", err)
+    console.log("# ERROR stream_db", err)
   });
   stream_db.on("end", function () {
-    console.log("###END##");
     callback(); //todo check call task.entry.error
-    if (preprocessed_list.length)
-      preprocessed_file();
-    else
-      preprocessed_active = false;
   });
-  task.entry
+  obj.entry
     .pipe(csvToJson)
     .pipe(parser)
     .pipe(stream_db)
     .on('finish', function () {
-      console.log('#finish', new Date());
+      console.log('finish', new Date());
     })
     .on('error', function (err) {
-      console.log('#ERROR task.entry', err);
+      console.log('# ERROR task.entry', err);
       callback();
-      if (preprocessed_list.length)
-        preprocessed_file();
-      else
-        preprocessed_active = false;
     });
 }, 1);
 processed_file.drain = function () {
-  console.log('all items have been processed');
+  if ( preprocessed_file.idle() ){
+    console.log('###all items have been processed'); //fixme call obj.done_cb()
+  }
 };
 
-var preprocessed_active = false;
-var preprocessed_list = [];
-var preprocessed_file = function (file_name_new) {
-  if (preprocessed_active && file_name_new !== undefined) {
-    preprocessed_list.push(file_name_new);
-  } else {
-    if (file_name_new !== undefined)
-      preprocessed_list.push(file_name_new);
-    if (preprocessed_list.length === 0)
-      return;
-    preprocessed_active = true;
-    var file_name = preprocessed_list.shift();
-    fs.createReadStream(config.temp_folder + file_name)
-      .pipe(unzip.Parse())
-      .on('entry', function (entry) {
-        var fileName = entry.path;
-        var type = entry.type; // 'Directory' or 'File'
-        console.log('ZIP files', fileName, type);
-        if (/\.(csv)$/i.test(fileName) && type === "File") { //todo check Directory
-          processed_file.push({name: fileName, entry: entry});
+var preprocessed_file = async.queue(function ( obj, callback ) {
+  if ( /\.(zip)$/i.test( obj.file_name ) ) {
+    fs.createReadStream( config.temp_folder + obj.file_name )
+      .pipe( unzip.Parse() )
+      .on( 'entry', function ( entry ) {
+        var file_name = entry.path,
+          path;
+        //var type = entry.type; // 'Directory' or 'File'
+
+        if ( ~obj.task.file_extension_to_processed.indexOf( file_name ) ) { //todo check Directory
+          obj.entry = entry;
+          path = obj.task.host + "/" + obj.task.path + "/" + file_name;
+          db_preparation( task.user_id, path, file_name, function(err, price_files_id){
+            if ( err ) return console.log(err);
+            console.log('price_files_id', file_name, price_files_id);
+            obj.price_files_id = price_files_id;
+            processed_file.push( obj );
+          });
+          callback();
         } else {
           entry.autodrain();
         }
       })
-      .on('close', function () {
-        console.log('END 1', new Date());
+      .on( 'error', function () {
+        console.log('### ERROR - preprocessed_file', obj);
+        callback();
       });
+  } else {
+    if ( ~obj.task.file_extension_to_processed.indexOf( obj.file_name ) ) {
+      obj.entry = fs.createReadStream( config.temp_folder + obj.file_name );
+      var path = obj.task.host + "/" + obj.task.path + "/" + obj.file_name;
+      db_preparation( task.user_id, path, obj.file_name, function(err, price_files_id){
+        if ( err ) return console.log(err);
+        console.log('price_files_id', obj.file_name, price_files_id);
+        obj.price_files_id = price_files_id;
+        processed_file.push( obj );
+      });
+    }
+    callback();
   }
-};
+}, 1);
 
 var check_file_to_download = function( task, file_name ){
   if ( ~task.file_list.indexOf( file_name ) ) return true;
@@ -249,15 +253,26 @@ var check_file_to_download = function( task, file_name ){
   return false;
 };
 
-var task_processed = function(task, cb) {
-  switch (task.type) {
-    case "ftp":
-      ftp_processed(task, cb);
-      break;
-    default :
-      console.log('http not set');
-      break;
-  }
+var db_preparation = function(user_id, path, file_name, cb) {
+  var to_price_files = [
+    user_id,
+    path + "/" + file_name,
+    "" + file_name,
+    "Обработка завершена",
+    1,
+    {"goods_quality": "1", "delivery_time": "1", "discount": "0"},
+    3 //todo maybe to config
+  ];
+  db_client.query('INSERT INTO price_files (user__id, path, name, status, active, info, price_type__id) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id', to_price_files, function (err, res) {
+    if (err) return cb(err);
+    if (!res.rows[0].id) return cb("### ERROR on get price_files_id");
+
+    db_client.query('DELETE FROM prices_wholesale WHERE user__id=$1', [user_id], function (err) {
+      if (err) return cb(err);
+      cb(err, res.rows[0].id);
+    });
+  });
+
 };
 
 var ftp_processed = function( task, done ) {
@@ -276,7 +291,7 @@ var ftp_processed = function( task, done ) {
         if ( err ) return cb( err );
         console.log('downloaded', config.temp_folder + file.name);
 
-        preprocessed_file( file.name );
+        preprocessed_file.push({task: task, file_name: file.name, done_cb: done});
         cb();
       });
     }, function ( err ) {
@@ -286,30 +301,18 @@ var ftp_processed = function( task, done ) {
   });
 };
 
-var db_preparation = function(user_id, path, file_name, cb) {
-  var to_price_files = [
-    user_id,
-    path + "/" + file_name,
-    "" + file_name,
-    "Обработка завершена",
-    1,
-    {"goods_quality": "1", "delivery_time": "1", "discount": "0"},
-    3 //todo maybe to config
-  ];
-  db_client.query('INSERT INTO price_files (user__id, path, name, status, active, info, price_type__id) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id', to_price_files, function (err, res) {
-    if (err) return cb(err);
-    console.log('price_files_id', res.rows[0].id)
-    if (!res.rows[0].id) return cb("### ERROR on get price_files_id");
-
-    db_client.query('DELETE FROM prices_wholesale WHERE user__id=$1', [user_id], function (err) {
-      if (err) return cb(err);
-      cb(err, res.rows[0].id);
-    });
-  });
-
+var task_processed = function(task, cb) {
+  switch (task.type) {
+    case "ftp":
+      ftp_processed(task, cb);
+      break;
+    default :
+      console.log('http not set');
+      break;
+  }
 };
 
-var parse_intv = setInterval(function () { //todo chekc chenges config.check_interval
+var parse_intv = setInterval(function () { //todo check changes config.check_interval
   if (parse_cycle_active) return console.error("Not finished prev cycle!");
   console.log('# Start parse cycle', new Date());
 
