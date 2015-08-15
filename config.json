@@ -8,9 +8,12 @@
       "pass" : "auto.ru",
       "path" : ".",
       "user_id" : 1575,
-      "file_extension" : ["zip", "csv", "xls"],
-      "file_list" : [],
-      "file_mask" : [""],
+      "file_extension_to_download" : [],
+      "file_list" : [
+        "autogiper_all.zip"
+      ],
+      "file_mask" : null,
+      "file_extension_to_processed" : ["csv"],
       "csv_opts" : {
         "headers"   : false,
         "delimiter" : ",",
@@ -18,19 +21,20 @@
         "escape"    : "\\",
         "objectMode": true
       }
-    },
-    {
-      "name": "test_1 91.197.10.216",
-      "type": "http",
-      "host": "http://91.197.10.216",
-      "path": "/files/",
-      "file_selector": "a[href^='/files/']",
-      "file_extension": ["zip", "csv", "xls"],
-      "file_list": [],
-      "file_mask": [""]
     }
+//    },
+//    {
+//      "name": "test_1 91.197.10.216",
+//      "type": "http",
+//      "host": "http://91.197.10.216",
+//      "path": "/files/",
+//      "file_selector": "a[href^='/files/']",
+//      "file_extension": ["zip", "csv", "xls"],
+//      "file_list": [],
+//      "file_mask": [""]
+//    }
   ],
-  "check_interval": 86400,
+  "check_interval": 864e5,
   "max_file_transmission" : 10,
   "db_connection_string" : "postgres://autogiper:autogiper@localhost/autogiper",
   "temp_folder" : "./temp"

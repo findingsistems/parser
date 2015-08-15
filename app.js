@@ -1,34 +1,35 @@
 process.on('uncaughtException', function (err) {
-    console.error(err);
-    console.error(err.stack);
+  console.error(err);
+  console.error(err.stack);
 });
 
 var fs = require("fs"),
-    http = require('http'),
-    iconv = require('iconv-lite'),
-    parse = require('csv-parse'),
-    jschardet = require("jschardet"),
-    request = require('request'),
-    unzip = require("unzip"),
-    Transform = require('stream').Transform,
-    cheerio = require('cheerio'),
-    JSFtp = require("jsftp"),
-    async = require("async"),
-    pg = require('pg'),
-    copyFrom = require('pg-copy-streams').from,
-    csv = require('fast-csv-mod');
+  http = require('http'),
+  iconv = require('iconv-lite'),
+  parse = require('csv-parse'),
+  jschardet = require("jschardet"),
+  request = require('request'),
+  unzip = require("unzip"),
+  Transform = require('stream').Transform,
+  cheerio = require('cheerio'),
+  JSFtp = require("jsftp"),
+  async = require("async"),
+  pg = require('pg'),
+  copyFrom = require('pg-copy-streams').from,
+  csv = require('fast-csv-mod');
 
 var config = {};
 var read_config = function () {
-    config = {};
-    try {
-        config = fs.readFileSync('config.json').toString();
-        config = JSON.parse(config);
-    } catch (e) {
-        console.error("Not exist or bad  config.json!");
-        throw e;
-    };
-    //todo check config structure
+  config = {};
+  try {
+    config = fs.readFileSync('config.json').toString();
+    config = JSON.parse(config);
+  } catch (e) {
+    console.error("Not exist or bad  config.json!");
+    throw e;
+  }
+  ;
+  //todo check config structure
 };
 read_config();
 
@@ -145,200 +146,203 @@ var db_client = null;
 //    },500);
 //};
 
-var user_id = 1575,
-    price_files_id = 0,
-    parse_cycle_active = false;
-
-var ftp = new JSFtp({
-    host: "ftp.parttrade.ru",
-    user: "auto.ru",
-    pass: "auto.ru"
-});
+var parse_cycle_active = false;
 
 var csv_opts = {
-    headers:    false,
-    delimiter:  ',',
-    quote :     '\"',
-    escape:     '\\',
-    objectMode: true
+  headers: false,
+  delimiter: ',',
+  quote: '\"',
+  escape: '\\',
+  objectMode: true
 };
 
-var transform_cb = function(data, encoding, done) {
-    if ((!data[2] || data[2].length > 300) || (!data[3] || data[3].length > 150) || (!data[4] || data[4].length > 150) || (!data[5] || data[5].length > 150)) {
-        console.log('###ALERT###');
-        console.log(data);
-    }
-    var t = "\",\"";
-    if (isNaN(+data[3]))
-        return done();
-    var manufacturer= data[0];
-    var code        = data[1].replace(/[^a-zA-Z0-9]/gi, "");
-    var name        = data[2];
-    var count       = ~~data[3];
-    var price       = (~~data[4]);
-    var delivere    = (data[5] || "").replace(/[^0-9\-]/gi, "");
-    var str = "\""+manufacturer+t+code+t+name+t+count+t+price+t+delivere+t+price_files_id+t+user_id+"\"";
-    this.push(str+"\n");
-    done();
+var transform_cb = function (data, encoding, done) {
+  if ((!data[2] || data[2].length > 300) || (!data[3] || data[3].length > 150) || (!data[4] || data[4].length > 150) || (!data[5] || data[5].length > 150)) {
+    console.log('###ALERT###');
+    console.log(data);
+  }
+  var t = "\",\"";
+  if (isNaN(+data[3]))
+    return done();
+  var manufacturer = data[0];
+  var code = data[1].replace(/[^a-zA-Z0-9]/gi, "");
+  var name = data[2];
+  var count = ~~data[3];
+  var price = (~~data[4]);
+  var delivere = (data[5] || "").replace(/[^0-9\-]/gi, "");
+  var str = "\"" + manufacturer + t + code + t + name + t + count + t + price + t + delivere + t + price_files_id + t + user_id + "\"";
+  this.push(str + "\n");
+  done();
 };
 var query = 'COPY prices_wholesale (manufacturer, code, name, count, price, delivere, price_files__id, user__id) FROM STDIN CSV';
 
 var processed_file = async.queue(function (task, callback) {
-    console.log('each preprocessed', task.name);
-    var csvToJson = csv(csv_opts); //todo make better
-    var parser = new Transform({objectMode: true}); //todo make better
-    parser._transform = transform_cb;
-    var stream_db = db_client.query(copyFrom(query));
-    stream_db.on("error", function(err) {
-        console.log("#ERROR stream_db", err)
+  console.log('each preprocessed', task.name);
+  var csvToJson = csv(csv_opts); //todo make better
+  var parser = new Transform({objectMode: true}); //todo make better
+  parser._transform = transform_cb;
+  var stream_db = db_client.query(copyFrom(query));
+  stream_db.on("error", function (err) {
+    console.log("#ERROR stream_db", err)
+  });
+  stream_db.on("end", function () {
+    console.log("###END##");
+    callback(); //todo check call task.entry.error
+    if (preprocessed_list.length)
+      preprocessed_file();
+    else
+      preprocessed_active = false;
+  });
+  task.entry
+    .pipe(csvToJson)
+    .pipe(parser)
+    .pipe(stream_db)
+    .on('finish', function () {
+      console.log('#finish', new Date());
+    })
+    .on('error', function (err) {
+      console.log('#ERROR task.entry', err);
+      callback();
+      if (preprocessed_list.length)
+        preprocessed_file();
+      else
+        preprocessed_active = false;
     });
-    stream_db.on("end", function() {
-        console.log("###END##");
-        callback(); //todo check call task.entry.error
-        if (preprocessed_list.length)
-            preprocessed_file();
-        else
-            preprocessed_active = false;
-    });
-    task.entry
-        .pipe(csvToJson)
-        .pipe(parser)
-        .pipe(stream_db)
-        .on('finish', function () {
-            console.log('#finish', new Date());
-        })
-        .on('error', function (err) {
-            console.log('#ERROR task.entry', err);
-            callback();
-            if (preprocessed_list.length)
-                preprocessed_file();
-            else
-                preprocessed_active = false;
-        });
 }, 1);
-processed_file.drain = function() {
-    parse_cycle_active = false;
-    console.log('all items have been processed');
+processed_file.drain = function () {
+  console.log('all items have been processed');
 };
 
 var preprocessed_active = false;
 var preprocessed_list = [];
-var preprocessed_file = function(file_name_new) {
-    if (preprocessed_active && file_name_new !== undefined) {
-        preprocessed_list.push(file_name_new);
-    } else {
-        if (file_name_new !== undefined)
-            preprocessed_list.push(file_name_new);
-        if (preprocessed_list.length === 0)
-            return;
-        preprocessed_active = true;
-        var file_name = preprocessed_list.shift();
-        fs.createReadStream(config.temp_folder + file_name)
-            .pipe(unzip.Parse())
-            .on('entry', function (entry) {
-                var fileName = entry.path;
-                var type = entry.type; // 'Directory' or 'File'
-                console.log('ZIP files',fileName, type);
-                if (/\.(csv)$/i.test(fileName) && type === "File") { //todo check Directory
-                    processed_file.push({name: fileName, entry: entry});
-                } else {
-                    entry.autodrain();
-                }
-            })
-            .on('close', function () {
-                console.log('END 1', new Date());
-            });
-    }
+var preprocessed_file = function (file_name_new) {
+  if (preprocessed_active && file_name_new !== undefined) {
+    preprocessed_list.push(file_name_new);
+  } else {
+    if (file_name_new !== undefined)
+      preprocessed_list.push(file_name_new);
+    if (preprocessed_list.length === 0)
+      return;
+    preprocessed_active = true;
+    var file_name = preprocessed_list.shift();
+    fs.createReadStream(config.temp_folder + file_name)
+      .pipe(unzip.Parse())
+      .on('entry', function (entry) {
+        var fileName = entry.path;
+        var type = entry.type; // 'Directory' or 'File'
+        console.log('ZIP files', fileName, type);
+        if (/\.(csv)$/i.test(fileName) && type === "File") { //todo check Directory
+          processed_file.push({name: fileName, entry: entry});
+        } else {
+          entry.autodrain();
+        }
+      })
+      .on('close', function () {
+        console.log('END 1', new Date());
+      });
+  }
 };
 
-var parse_cycle = function() {
-    console.log("PARSE CYCLE", new Date());
-    var to_price_files = [
-        user_id,
-        "ftp.parttrade.ru/autogiper_all_csv.zip",
-        "autogiper_all_csv.zip",
-        "Обработка завершена",
-        1,
-        {"goods_quality":"1","delivery_time":"1","discount":"0"},
-        3
-    ];
-    db_client.query('INSERT INTO price_files (user__id, path, name, status, active, info, price_type__id) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id', to_price_files, function(err, insert_result) {
-        if (err) return console.error(err);
-
-        console.log('price_files_id', insert_result.rows[0].id)
-        if (insert_result.rows[0].id)
-            price_files_id = insert_result.rows[0].id;
-        else
-            return console.log("### ERROR on get price_files_id");
-
-        db_client.query('DELETE FROM prices_wholesale WHERE user__id=$1', [user_id], function(err) {
-            if (err) return console.error(err);
-
-            console.log("Cleared prev rows user_id="+user_id, new Date());
-            ftp.ls(".", function (err, res) {
-                async.eachLimit(res, 1, function (file, cb) {
-                    if (file.name !== "autogiper_all.zip")
-                        return cb();
-
-                    console.log("start download", file.name);
-                    ftp.get("./" + file.name, config.temp_folder + file.name, function (err) {
-                        if (err) return cb(err);
-                        console.log('downloaded', config.temp_folder + file.name);
-                        preprocessed_file(file.name);
-                        cb();
-                    });
-                }, function (err) {
-                    if (err) return console.log(err);
-                    console.log('all files were downloaded');
-                });
-            });
-        });
-    });
+var check_file_to_download = function( task, file_name ){
+  if ( ~task.file_list.indexOf( file_name ) ) return true;
+  //todo check task.file_mask and task.file_extension_to_download
+  return false;
 };
 
-parse_cycle();
+var task_processed = function(task, cb) {
+  switch (task.type) {
+    case "ftp":
+      ftp_processed(task, cb);
+      break;
+    default :
+      console.log('http not set');
+      break;
+  }
+};
 
-var parse_intv = setInterval(function(){
-    if (parse_cycle_active) return console.error("Not finished prev cycle!");
-    console.log('# Start parse cycle', new Date());
+var ftp_processed = function( task, done ) {
+  var ftp = new JSFtp({
+    host: task.host,
+    user: task.user,
+    pass: task.pass
+  });
 
-    parse_cycle_active = true; //todo on error set false
-    read_config();
-    db_client = new pg.Client(config.db_connection_string);
-    db_client.connect();
+  ftp.ls( task.path, function (err, res) {
+    async.eachLimit( res, 1, function ( file, cb ) {
+      if ( !check_file_to_download( task, file.name ) ) return cb();
+      console.log("start download", file.name);
 
-    if (!fs.existsSync(config.temp_folder))
-        fs.mkdirSync(config.temp_folder);
+      ftp.get( "./" + file.name, config.temp_folder + file.name, function ( err ) {
+        if ( err ) return cb( err );
+        console.log('downloaded', config.temp_folder + file.name);
 
-    async.eachLimit(config.list, 1, function (task, cb) {
-        console.log("start task", task.name, new Date());
-    }, function (err) {
-        if (err) return console.log(err);
-        console.log('# All task were finished', new Date());
-        db_client.end();
+        preprocessed_file( file.name );
+        cb();
+      });
+    }, function ( err ) {
+      if ( err ) return console.log(err);
+      console.log('all files were downloaded');
     });
-    parse_cycle();
-}, 864e5);
+  });
+};
 
+var db_preparation = function(user_id, path, file_name, cb) {
+  var to_price_files = [
+    user_id,
+    path + "/" + file_name,
+    "" + file_name,
+    "Обработка завершена",
+    1,
+    {"goods_quality": "1", "delivery_time": "1", "discount": "0"},
+    3 //todo maybe to config
+  ];
+  db_client.query('INSERT INTO price_files (user__id, path, name, status, active, info, price_type__id) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id', to_price_files, function (err, res) {
+    if (err) return cb(err);
+    console.log('price_files_id', res.rows[0].id)
+    if (!res.rows[0].id) return cb("### ERROR on get price_files_id");
 
-//ftp.get("./" + file.name, config.temp_folder + file.name, function (err) {
-//    if (err) return cb(err);
-//    console.log('downloaded', config.temp_folder + file.name);
-//    preprocessed_file(file.name);
-//    cb();
-//});
+    db_client.query('DELETE FROM prices_wholesale WHERE user__id=$1', [user_id], function (err) {
+      if (err) return cb(err);
+      cb(err, res.rows[0].id);
+    });
+  });
+
+};
+
+var parse_intv = setInterval(function () { //todo chekc chenges config.check_interval
+  if (parse_cycle_active) return console.error("Not finished prev cycle!");
+  console.log('# Start parse cycle', new Date());
+
+  parse_cycle_active = true; //todo on error set false
+  read_config();
+  db_client = new pg.Client(config.db_connection_string);
+  db_client.connect();
+
+  if (!fs.existsSync(config.temp_folder))
+    fs.mkdirSync(config.temp_folder);
+
+  async.eachLimit(config.list, 1, function ( task, cb ) {
+    console.log("start task", task.name, new Date());
+    task_processed(task, cb);
+  }, function ( err ) {
+    if ( err ) return console.log(err);
+    console.log('# All task were finished', new Date());
+    db_client.end();
+    parse_cycle_active = false;
+  });
+}, config.check_interval);
 
 /*
-- each on config.list, use async
-  -- connect to file storage
-  -- get file list and filtering from config
-  -- check file changed
-  -- insert to price_files and delete old rows on table to insert(prices_wholesale)
-  -- processing file(unzip if archive), check file type from config
-  -- transform from config options
-- close all connection
+ - each on config.list, use async
+ -- connect to file storage
+ -- get file list and filtering from config
+ -- check file changed
+ -- insert to price_files and delete old rows on table to insert(prices_wholesale)
+ -- processing file(unzip if archive), check file type from config
+ -- transform from config options
+ - close all connection
 
 
-# DB structure
-id | code | relevant_code | manufacturer | name | count | price | price_files_id | user_id | fts | delivere
+ # DB structure
+ id | code | relevant_code | manufacturer | name | count | price | price_files_id | user_id | fts | delivere
  */
