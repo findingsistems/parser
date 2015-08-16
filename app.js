@@ -4,21 +4,23 @@ process.on('uncaughtException', function (err) {
 });
 
 var fs = require("fs"),
+  pg = require('pg'),
+  csv = require('fast-csv-mod'),
   http = require('http'),
-  iconv = require('iconv-lite'),
-  parse = require('csv-parse'),
-  jschardet = require("jschardet"),
-  request = require('request'),
   unzip = require("unzip"),
-  Transform = require('stream').Transform,
-  cheerio = require('cheerio'),
+  iconv = require('iconv-lite'),
   JSFtp = require("jsftp"),
   async = require("async"),
-  pg = require('pg'),
+  request = require('request'),
+  cheerio = require('cheerio'),
   copyFrom = require('pg-copy-streams').from,
-  csv = require('fast-csv-mod');
+  jschardet = require("jschardet"),
+  Transform = require('stream').Transform;
 
-var config = {};
+var config = {},
+  db_client = null,
+  parse_cycle_active = false;
+
 var read_config = function () {
   config = {};
   try {
@@ -28,12 +30,9 @@ var read_config = function () {
     console.error("Not exist or bad  config.json!");
     throw e;
   }
-  ;
   //todo check config structure
 };
 read_config();
-
-var db_client = null;
 //var task_processed = function () {
 //    var task = config.list.shift();
 //    console.log("processed task", task.name, "|", new Date());
@@ -146,17 +145,7 @@ var db_client = null;
 //    },500);
 //};
 
-var parse_cycle_active = false;
-
-var csv_opts = {
-  headers: false,
-  delimiter: ',',
-  quote: '\"',
-  escape: '\\',
-  objectMode: true
-};
-
-var transform_cb = function (data, encoding, done) {
+var transform_cb = function (data, encoding, done) { //todo configurate from config file
   if ((!data[2] || data[2].length > 300) || (!data[3] || data[3].length > 150) || (!data[4] || data[4].length > 150) || (!data[5] || data[5].length > 150)) {
     console.log('###ALERT###');
     console.log(data);
@@ -170,25 +159,37 @@ var transform_cb = function (data, encoding, done) {
   var count = ~~data[3];
   var price = (~~data[4]);
   var delivere = (data[5] || "").replace(/[^0-9\-]/gi, "");
-  var str = "\"" + manufacturer + t + code + t + name + t + count + t + price + t + delivere + t + price_files_id + t + user_id + "\""; //fixme GET user_id and price_files_id
+  var str = "\"" + manufacturer + t + code + t + name + t + count + t + price + t + delivere + t + this._price_files_id + t + this._user_id + "\"";
   this.push(str + "\n");
   done();
 };
 var query = 'COPY prices_wholesale (manufacturer, code, name, count, price, delivere, price_files__id, user__id) FROM STDIN CSV';
 
-var processed_file = async.queue(function (obj, callback) {
-  var csvToJson = csv(obj.task.csv_opts); //todo make better
-  var parser = new Transform({objectMode: true}); //todo make better
+var processed_file = async.queue(function (obj, callback) { //todo make better
+  var toJSON, parser, stream_db;
+  if ( /\.(csv)$/i.test( obj.file_name ) ) {
+    toJSON = csv(obj.task.csv_opts);
+  } else {
+    console.log("todo add format", obj.file_name);
+    //toJSON= csv(obj.task.xls_opts);
+  }
+
+  parser = new Transform({objectMode: true});
   parser._transform = transform_cb;
-  var stream_db = db_client.query(copyFrom(query));
+  parser._task = obj.task;
+  parser._user_id = obj.task.user_id;
+  parser._price_files_id = obj.price_files_id;
+
+  stream_db = db_client.query(copyFrom(query));
   stream_db.on("error", function (err) {
     console.log("# ERROR stream_db", err)
   });
   stream_db.on("end", function () {
     callback(); //todo check call task.entry.error
   });
+
   obj.entry
-    .pipe(csvToJson)
+    .pipe(toJSON)
     .pipe(parser)
     .pipe(stream_db)
     .on('finish', function () {
@@ -199,11 +200,6 @@ var processed_file = async.queue(function (obj, callback) {
       callback();
     });
 }, 1);
-processed_file.drain = function () {
-  if ( preprocessed_file.idle() ){
-    console.log('###all items have been processed'); //fixme call obj.done_cb()
-  }
-};
 
 var preprocessed_file = async.queue(function ( obj, callback ) {
   if ( /\.(zip)$/i.test( obj.file_name ) ) {
@@ -275,7 +271,7 @@ var db_preparation = function(user_id, path, file_name, cb) {
 
 };
 
-var ftp_processed = function( task, done ) {
+var ftp_processed = function( task ) {
   var ftp = new JSFtp({
     host: task.host,
     user: task.user,
@@ -291,7 +287,7 @@ var ftp_processed = function( task, done ) {
         if ( err ) return cb( err );
         console.log('downloaded', config.temp_folder + file.name);
 
-        preprocessed_file.push({task: task, file_name: file.name, done_cb: done});
+        preprocessed_file.push({task: task, file_name: file.name});
         cb();
       });
     }, function ( err ) {
@@ -304,12 +300,20 @@ var ftp_processed = function( task, done ) {
 var task_processed = function(task, cb) {
   switch (task.type) {
     case "ftp":
-      ftp_processed(task, cb);
+      ftp_processed(task);
       break;
     default :
       console.log('http not set');
       break;
   }
+  (function(){
+    processed_file.drain = function () {
+      if ( preprocessed_file.idle() ){
+        console.log('###all items have been processed', task.name);
+        cb();
+      }
+    };
+  })(task, cb);
 };
 
 var parse_intv = setInterval(function () { //todo check changes config.check_interval
