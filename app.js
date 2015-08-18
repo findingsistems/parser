@@ -218,6 +218,7 @@ var transform_compiler = function( task ) {
   var delivere = transform_column( task.transform_opts.delivere );
 
   return function (data, encoding, done) {
+    console.log('HERE', typeof data, encoding, typeof done);
     if ( (!data[2] || data[2].length > 300) || (!data[3] || data[3].length > 150) || (!data[4] || data[4].length > 150) || (!data[5] || data[5].length > 150) ) {
       console.log('###ALERT###');
       console.log(data);
@@ -246,6 +247,7 @@ var processed_file = async.queue(function (obj, callback) { //todo make better
     toJSON = csv(obj.task.csv_opts);
   } else {
     console.log("todo add format", obj.file_name);
+    return callback();
     //toJSON= csv(obj.task.xls_opts);
   }
 
@@ -256,7 +258,7 @@ var processed_file = async.queue(function (obj, callback) { //todo make better
   parser._price_files_id = obj.price_files_id;
 
   // stream_db = db_client.query(copyFrom(query));
-  stream_db = fs.createWriteStream('./temp/out-test.csv');
+  stream_db = fs.createWriteStream('temp/out-test.csv');
   stream_db.on("error", function (err) {
     console.log("# ERROR stream_db", err);
   });
@@ -264,18 +266,17 @@ var processed_file = async.queue(function (obj, callback) { //todo make better
     callback(); //todo check call task.entry.error
   });
 
-  console.log("HERE");
   obj.entry
     .pipe(toJSON)
     .pipe(parser)
     .pipe(stream_db)
-    // .on('finish', function () {
-    //   console.log('finish', new Date());
-    // })
-    // .on('error', function (err) {
-    //   console.log('# ERROR task.entry', err);
-    //   callback();
-    // });
+     .on('finish', function () {
+       console.log('finish', new Date());
+     })
+     .on('error', function (err) {
+       console.log('# ERROR task.entry', err);
+       callback();
+     });
 }, 1);
 
 
@@ -317,6 +318,7 @@ var preprocessed_file = async.queue(function ( obj, callback ) {
         console.log('File', file_name, ~obj.task.file_extension_to_processed.indexOf( r_get_extension.exec( file_name )[1] ) );
         if ( ~obj.task.file_extension_to_processed.indexOf( r_get_extension.exec( file_name )[1] ) ) { //todo check Directory
           obj.entry = entry;
+          obj.file_name = file_name;
           path = obj.task.host + "/" + obj.task.path + "/" + file_name;
           db_preparation( obj.task.user_id, path, file_name, function(err, price_files_id){
             if ( err ) return console.log( err );
