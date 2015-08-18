@@ -138,25 +138,25 @@ read_config();
 -- toInt
  */
 var cancel_check = function( type, data, done ) {
-  var check_ok = true;
+  var check = true;
   switch ( type ){
     case "NaN" :
-      check_ok = isNaN( data );
+      check = isNaN( data );
       break;
     case "length" :
-      check_ok = data != null && !data.length;
+      check = data != null && !data.length;
       break;
     case "null" :
     case "undefined" :
-      check_ok = data != null && data !== undefined;
+      check = data != null && data !== undefined;
       break;
     default :
       console.error( "Cancel check", type );
   }
-  if ( check_ok ){
-    return data;
-  } else {
+  if ( check ){
     return done();
+  } else {
+    return data;
   }
 };
 
@@ -218,7 +218,6 @@ var transform_compiler = function( task ) {
   var delivere = transform_column( task.transform_opts.delivere );
 
   return function (data, encoding, done) {
-    console.log('HERE', typeof data, encoding, typeof done);
     if ( (!data[2] || data[2].length > 300) || (!data[3] || data[3].length > 150) || (!data[4] || data[4].length > 150) || (!data[5] || data[5].length > 150) ) {
       console.log('###ALERT###');
       console.log(data);
@@ -315,14 +314,13 @@ var preprocessed_file = async.queue(function ( obj, callback ) {
         var file_name = entry.path,
           path;
         //var type = entry.type; // 'Directory' or 'File'
-        console.log('File', file_name, ~obj.task.file_extension_to_processed.indexOf( r_get_extension.exec( file_name )[1] ) );
         if ( ~obj.task.file_extension_to_processed.indexOf( r_get_extension.exec( file_name )[1] ) ) { //todo check Directory
           obj.entry = entry;
           obj.file_name = file_name;
           path = obj.task.host + "/" + obj.task.path + "/" + file_name;
           db_preparation( obj.task.user_id, path, file_name, function(err, price_files_id){
             if ( err ) return console.log( err );
-            console.log('price_files_id', file_name, price_files_id);
+            console.log(file_name, 'price_files_id', price_files_id);
             obj.price_files_id = price_files_id;
             processed_file.push( obj );
           });
