@@ -10,6 +10,7 @@ var fs = require("fs"),
   http = require('http'),
   unzip = require("unzip"),
   iconv = require('iconv-lite'),
+  spawn = require('child_process').spawn,
   JSFtp = require("jsftp"),
   async = require("async"),
   request = require('request'),
@@ -256,8 +257,8 @@ var processed_file = async.queue(function (obj, callback) { //todo make better
   parser._user_id = obj.task.user_id;
   parser._price_files_id = obj.price_files_id;
 
-  // stream_db = db_client.query(copyFrom(query));
-  stream_db = fs.createWriteStream('temp/out-test.csv');
+   stream_db = db_client.query(copyFrom(query));
+  //stream_db = fs.createWriteStream('temp/out-test.csv');
   stream_db.on("error", function (err) {
     console.log("# ERROR stream_db", err);
   });
@@ -283,25 +284,25 @@ var processed_file = async.queue(function (obj, callback) { //todo make better
  * PREPROCESSED FILE
  */
 var db_preparation = function(user_id, path, file_name, cb) {
-  // var to_price_files = [
-  //   user_id,
-  //   path + "/" + file_name,
-  //   "" + file_name,
-  //   "Обработка завершена",
-  //   1,
-  //   {"goods_quality": "1", "delivery_time": "1", "discount": "0"},
-  //   3 //todo maybe to config
-  // ];
-  // db_client.query('INSERT INTO price_files (user__id, path, name, status, active, info, price_type__id) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id', to_price_files, function (err, res) {
-  //   if ( err ) return cb( err );
-  //   if ( !res.rows[0].id ) return cb("### ERROR on get price_files_id");
+   var to_price_files = [
+     user_id,
+     path + "/" + file_name,
+     "" + file_name,
+     "Обработка завершена",
+     1,
+     {"goods_quality": "1", "delivery_time": "1", "discount": "0"},
+     3 //todo maybe to config
+   ];
+   db_client.query('INSERT INTO price_files (user__id, path, name, status, active, info, price_type__id) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id', to_price_files, function (err, res) {
+     if ( err ) return cb( err );
+     if ( !res.rows[0].id ) return cb("### ERROR on get price_files_id");
 
-  //   db_client.query('DELETE FROM prices_wholesale WHERE user__id=$1', [user_id], function (err) {
-  //     if ( err ) return cb( err );
-  //     cb( err, res.rows[0].id );
-  //   });
-  // });
-  cb(null, 1234);
+     db_client.query('DELETE FROM prices_wholesale WHERE user__id=$1', [user_id], function (err) {
+       if ( err ) return cb( err );
+       cb( err, res.rows[0].id );
+     });
+   });
+  //cb(null, 1234);
 };
 
 var preprocessed_file = async.queue(function ( obj, callback ) {
@@ -418,8 +419,8 @@ var parse_cycle = function () {
     parse_intv = setInterval( parse_cycle, config.check_interval );
   }
 
-  // db_client = new pg.Client( config.db_connection_string );
-  // db_client.connect();
+   db_client = new pg.Client( config.db_connection_string );
+   db_client.connect();
 
   if ( !fs.existsSync( config.temp_folder ) )
     fs.mkdirSync( config.temp_folder );
@@ -429,11 +430,12 @@ var parse_cycle = function () {
     task_processed( task, cb );
   }, function ( err ) {
     if ( err ) return console.log(err);
-    console.log('# All task were finished', new Date());
-    // db_client.end();
-    //todo clear temp folder
-    //todo close all connection
-    parse_cycle_active = false;
+      console.log('# All task were finished', new Date());
+      db_client.end();
+      //todo clear temp folder
+      //todo close all connection
+      spawn('sh', [ 'db_resetxlog.sh' ]);
+      parse_cycle_active = false;
   });
 };
 parse_cycle();
