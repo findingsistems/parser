@@ -9,14 +9,14 @@ var fs = require("fs"),
   csv = require('fast-csv-mod'),
   http = require('http'),
   unzip = require("unzip"),
-  iconv = require('iconv-lite'),
+  //iconv = require('iconv-lite'),
   spawn = require('child_process').spawn,
   JSFtp = require("jsftp"),
   async = require("async"),
   request = require('request'),
   cheerio = require('cheerio'),
   copyFrom = require('pg-copy-streams').from,
-  jschardet = require("jschardet"),
+  //jschardet = require("jschardet"),
   Transform = require('stream').Transform;
 
 var config, db_client, parse_intv,
@@ -35,102 +35,6 @@ var read_config = function () {
 };
 read_config();
 
-//var http_processed = function (task) {
-//    var regexp_file_url, regexp_str;
-//    var i = 0;
-//    var result_list = [];
-//    var url = task.host + task.path;
-//
-//    if (task.file_extension.length) {
-//        regexp_str = "(?:[^\\/][\\d\\w\\.]+)+(";
-//        for (i = 0; i < task.file_extension.length; i++)
-//            regexp_str += (i === 0 ? task.file_extension[i] : "|" + task.file_extension[i]);
-//        regexp_str += ")+$";
-//        regexp_file_url = new RegExp(regexp_str, 'gi');
-//    }
-//    request(url, function (error, response, html) {
-//        if (!error && response.statusCode == 200) {
-//            var $ = cheerio.load(html);
-//            $(task.file_selector).each(function(i, element){
-//                //console.log($(element).text());
-//                result_list.push($(element).attr('href'));
-//            });
-//            console.log("Request result:", result_list.length);
-//            result_list = result_processed(result_list, regexp_file_url);
-//            result_list = file_name_processed(result_list, task.host);
-//            download_file(result_list, function(file_name, is_last){
-//                console.log('downloaded', file_name, is_last);
-//            });
-//        } else {
-//            console.error(error, response.statusCode);
-//        }
-//    });
-//};
-//
-//var result_processed = function (array, regexp_file_url) {
-//    var f, j, len, ret, v;
-//    ret = [];
-//    for (j = 0, len = array.length; j < len; j++) {
-//        v = array[j];
-//        f = regexp_file_url.exec(v);
-//        if (f !== null ? f.length : void 0) {
-//            ret.push({
-//                href: v,
-//                file_name: f[0]
-//            });
-//        }
-//    }
-//    //todo add file_list check
-//    return ret;
-//};
-//
-//var file_name_processed = function (array, host) {
-//    var j, len, ret, v;
-//    ret = [];
-//    for (j = 0, len = array.length; j < len; j++) { //todo add file_mask check
-//        v = array[j];
-//        if (v.href[0] === "/") {
-//            v.href = host + v.href;
-//        }
-//        ret.push(v);
-//    }
-//    return ret;
-//};
-//
-//var download_file = function (file_url_list, cb) {
-//    var v;
-//    var len = file_url_list.length;
-//    var count = 0;
-//    var transmit_count = 0;
-//    var out_file_list = [];
-//    console.log("Start interval", file_url_list.length);
-//    var inv = setInterval(function(){
-//        if (!file_url_list.length)
-//           return clearInterval(inv);
-//        if (transmit_count >= config.max_file_transmission)
-//            return;
-//        v = file_url_list.shift();
-//        (function (v) {
-//            var i = transmit_count++;
-//            out_file_list[i] = fs.createWriteStream("./temp/" + v.file_name);
-//            http.get(v.href, function (res) {
-//                count++;
-//                transmit_count--;
-//                res.pipe(out_file_list[i]);
-//                if (count !== len)
-//                    cb(v.file_name, false);
-//                else
-//                    cb(v.file_name, true);
-//            }).on('error', function (e) {
-//                count++;
-//                transmit_count--;
-//                console.error("Get error:", count, v.file_name, e.message);
-//                if (count === len)
-//                    cb(null, true);
-//            });
-//        })(v);
-//    },500);
-//};
 /*
 - default value
 - cancel if empty || NaN
@@ -257,7 +161,7 @@ var processed_file = async.queue(function (obj, callback) { //todo make better
   parser._user_id = obj.task.user_id;
   parser._price_files_id = obj.price_files_id;
 
-   stream_db = db_client.query(copyFrom(query));
+  stream_db = db_client.query(copyFrom(query));
   //stream_db = fs.createWriteStream('temp/out-test.csv');
   stream_db.on("error", function (err) {
     console.log("# ERROR stream_db", err);
@@ -371,7 +275,7 @@ var ftp_processed = function( task ) {
       if ( !check_file_to_download( task, file.name ) ) return cb();
       console.log("start download", file.name);
 
-      ftp.get( "./" + file.name, config.temp_folder + "/" + file.name, function ( err ) {
+      ftp.get( task.path + "/" + file.name, config.temp_folder + "/" + file.name, function ( err ) {
         if ( err ) return cb( err );
         console.log('downloaded', config.temp_folder + "/" + file.name);
 
@@ -380,8 +284,51 @@ var ftp_processed = function( task ) {
       });
     }, function ( err ) {
       if ( err ) return console.log( err );
-      console.log('all files were downloaded');
+      console.log('all files were downloaded'); //todo add cb
     });
+  });
+};
+
+
+var http_processed = function (task) {
+  var result_list = [],
+    url = task.host + task.path;
+
+  request(url, function (error, response, html) {
+    if (!error && response.statusCode == 200) {
+      var $ = cheerio.load(html);
+
+      $(task.file_selector).each(function(i, element){
+        //console.log($(element).text());
+        result_list.push({
+          name: $(element).text(),
+          href: $(element).attr('href')
+        });
+      });
+
+      async.eachLimit( result_list, 1, function ( file, cb ) {
+        if ( !check_file_to_download( task, file.name ) ) return cb();
+        console.log("start download", file.name);
+
+        http.get( file.href, function ( res ) {
+          var out = fs.createWriteStream( config.temp_folder + "/" + file.name );
+          out
+            .on( "error", cb )
+            .on("finish", function(){
+              preprocessed_file.push({task: task, file_name: file.name});
+              cb();
+            });
+
+          res.pipe(out);
+        }).on( 'error', cb );
+      }, function ( err ) {
+        if ( err ) return console.log( err );
+        console.log('all files were downloaded'); //todo add cb
+      });
+
+    } else {
+      console.error(error, response.statusCode); //todo add cb
+    }
   });
 };
 
@@ -389,6 +336,9 @@ var task_processed = function(task, cb) {
   switch (task.type) {
     case "ftp":
       ftp_processed(task);
+      break;
+    case "http":
+      http_processed(task);
       break;
     default :
       console.log('http not set');
