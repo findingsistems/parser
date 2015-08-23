@@ -8,6 +8,7 @@
       "pass" : "auto.ru",
       "path" : ".",
       "user_id" : 1575,
+      "encoding": "utf8",
       "file_extension_to_download" : [],
       "file_list" : [
         "autogiper_all.zip"
@@ -17,7 +18,7 @@
       "csv_opts" : {
         "headers"   : false,
         "delimiter" : ",",
-        "quote "    : "\"",
+        "quote"     : "\"",
         "escape"    : "\\",
         "objectMode": true
       },
@@ -43,6 +44,55 @@
         },
         "delivere" : {
           "column" : 5,
+          "type" : "regexp",
+          "value": "[^0-9\\-]",
+          "options": "gi"
+        }
+      }
+    },
+    {
+      "name": "test_1 91.197.10.216",
+      "type": "http",
+      "host": "http://91.197.10.216",
+      "path": "files",
+      "user_id" : 11111,
+      "encoding": "win1251",
+      "file_selector": "a[href^='/files/']",
+      "task_begin" : {
+        "preprocessed_file_1" : "tblAvrgSupplDays_30.txt"
+      },
+      "file_extension_to_download": ["zip"],
+      "file_mask": null,
+      "file_list": [],
+      "file_extension_to_processed" : ["csv"],
+      "csv_opts" : {
+        "headers"   : true,
+        "delimiter" : ";",
+        "quote"     : "\"",
+        "objectMode": true
+      },
+      "transform_opts" : {
+        "manufacturer" : {
+          "column" : 0
+        },
+        "code" : {
+          "column" : 1,
+          "type" : "number_latter"
+        },
+        "name" : {
+          "column" : 2
+        },
+        "count" : {
+          "column" : 5,
+          "type" : "to_int",
+          "cancel": "NaN"
+        },
+        "price" : {
+          "column" : 4,
+          "type" : "to_int"
+        },
+        "delivere" : {
+          "column" : 6,
           "type" : "regexp",
           "value": "[^0-9\\-]",
           "options": "gi"

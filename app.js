@@ -9,7 +9,7 @@ var fs = require("fs"),
   csv = require('fast-csv-mod'),
   http = require('http'),
   unzip = require("unzip"),
-  //iconv = require('iconv-lite'),
+  iconv = require('iconv-lite'),
   spawn = require('child_process').spawn,
   JSFtp = require("jsftp"),
   async = require("async"),
@@ -123,17 +123,25 @@ var transform_compiler = function( task ) {
   var delivere = transform_column( task.transform_opts.delivere );
 
   return function (data, encoding, done) {
-    if ( (!data[2] || data[2].length > 300) || (!data[3] || data[3].length > 150) || (!data[4] || data[4].length > 150) || (!data[5] || data[5].length > 150) ) {
+    var d = [], key;
+    if ( data !== null && typeof data === 'object' ) {
+      for (key in data) {
+        d.push(data[key]);
+      }
+    } else {
+      d = data;
+    }
+    if ( (!d[2] || d[2].length > 300) || (!d[3] || d[3].length > 150) || (!d[4] || d[4].length > 150) || (!d[5] || d[5].length > 150) ) {
       console.log('###ALERT###');
-      console.log(data);
+      console.log(d);
     }
     var t = "\",\"";
-    var str = "\"" + manufacturer( data, done ) + t ;
-    str += code( data, done ) + t;
-    str += name( data, done ) + t;
-    str += count( data, done ) + t;
-    str += price( data, done ) + t;
-    str += delivere( data, done ) + t;
+    var str = "\"" + manufacturer( d, done ) + t ;
+    str += code( d, done ) + t;
+    str += name( d, done ) + t;
+    str += count( d, done ) + t;
+    str += price( d, done ) + t;
+    str += delivere( d, done ) + t;
     str += this._price_files_id + t + this._user_id + "\"";
     this.push(str + "\n");
     done();
@@ -171,6 +179,7 @@ var processed_file = async.queue(function (obj, callback) { //todo make better
   });
 
   obj.entry
+    .pipe(iconv.decodeStream('win1251'))
     .pipe(toJSON)
     .pipe(parser)
     .pipe(stream_db)
@@ -195,7 +204,7 @@ var db_preparation = function(user_id, path, file_name, cb) {
      "Обработка завершена",
      1,
      {"goods_quality": "1", "delivery_time": "1", "discount": "0"},
-     3 //todo maybe to config
+     3
    ];
    db_client.query('INSERT INTO price_files (user__id, path, name, status, active, info, price_type__id) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id', to_price_files, function (err, res) {
      if ( err ) return cb( err );
@@ -235,7 +244,7 @@ var preprocessed_file = async.queue(function ( obj, callback ) {
         }
       })
       .on( 'error', function () {
-        console.log('### ERROR - preprocessed_file', obj);
+        console.log('### ERROR - preprocessed_file', obj.file_name);
         callback();
       });
   } else {
@@ -258,8 +267,10 @@ var preprocessed_file = async.queue(function ( obj, callback ) {
  */
 
 var check_file_to_download = function( task, file_name ){
+  var r_get_extension = /\.(.*)$/i;
   if ( ~task.file_list.indexOf( file_name ) ) return true;
-  //todo check task.file_mask and task.file_extension_to_download
+  if ( r_get_extension.exec( file_name ) && ~task.file_extension_to_download.indexOf( r_get_extension.exec( file_name )[1] ) ) return true;
+  //todo check task.file_mask
   return false;
 };
 
@@ -292,7 +303,7 @@ var ftp_processed = function( task ) {
 
 var http_processed = function (task) {
   var result_list = [],
-    url = task.host + task.path;
+    url = task.host + '/' + task.path;
 
   request(url, function (error, response, html) {
     if (!error && response.statusCode == 200) {
@@ -302,7 +313,7 @@ var http_processed = function (task) {
         //console.log($(element).text());
         result_list.push({
           name: $(element).text(),
-          href: $(element).attr('href')
+          href: task.host + $(element).attr('href')
         });
       });
 
@@ -312,14 +323,15 @@ var http_processed = function (task) {
 
         http.get( file.href, function ( res ) {
           var out = fs.createWriteStream( config.temp_folder + "/" + file.name );
+          res.pipe(out);
           out
             .on( "error", cb )
             .on("finish", function(){
-              preprocessed_file.push({task: task, file_name: file.name});
-              cb();
+              out.close( function(){
+                preprocessed_file.push({task: task, file_name: file.name});
+                cb();
+              });
             });
-
-          res.pipe(out);
         }).on( 'error', cb );
       }, function ( err ) {
         if ( err ) return console.log( err );
@@ -362,7 +374,7 @@ var parse_cycle = function () {
   if ( parse_cycle_active ) return console.error( "Not finished prev cycle!" );
   console.log('# Start parse cycle', new Date());
 
-  parse_cycle_active = true; //todo on error set false
+  parse_cycle_active = true;
   read_config();
   if ( !parse_intv || parse_check_interval !== config.check_interval ) {
     if ( parse_intv ) clearInterval( parse_intv );
@@ -383,7 +395,6 @@ var parse_cycle = function () {
       console.log('# All task were finished', new Date());
       db_client.end();
       //todo clear temp folder
-      //todo close all connection
       spawn('sh', [ 'db_resetxlog.sh' ]);
       parse_cycle_active = false;
   });
@@ -391,17 +402,7 @@ var parse_cycle = function () {
 parse_cycle();
 
 /*
- ,
- {
- "name": "test_1 91.197.10.216",
- "type": "http",
- "host": "http://91.197.10.216",
- "path": "/files/",
- "file_selector": "a[href^='/files/']",
- "file_extension": ["zip", "csv", "xls"],
- "file_list": [],
- "file_mask": [""]
- }
+ tblAvrgSupplDays_30.txt
 
  # DB structure
  id | code | relevant_code | manufacturer | name | count | price | price_files_id | user_id | fts | delivere
