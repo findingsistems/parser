@@ -19,7 +19,9 @@ var fs = require("fs"),
   //jschardet = require("jschardet"),
   Transform = require('stream').Transform;
 
-var config, db_client, parse_intv,
+var config, db_client, parse_intv, query,
+  task_begin = {},
+  task_all_downloaded =false,
   parse_cycle_active = false;
 
 var read_config = function () {
@@ -65,7 +67,7 @@ var cancel_check = function( type, data, done ) {
   }
 };
 
-var transform_column = function( column_opt ) {
+var transform_column = function( column_opt, task ) {
   var r;
   switch ( column_opt.type ) {
     case "regexp" :
@@ -91,7 +93,18 @@ var transform_column = function( column_opt ) {
       break;
     case "to_int":
       return function( data, done ){
-        var ret = ~~data[column_opt.column];
+        var ret = data[column_opt.column ].split( ','  )[0];
+        ret = ~~ret;
+        if ( column_opt.cancel != null ) {
+          return cancel_check( column_opt.cancel, ret, done );
+        } else {
+          return ret;
+        }
+      };
+      break;
+    case "id_to_delivere":
+      return function( data, done ){
+        var ret = task.id_to_delivere[task.file_id];
         if ( column_opt.cancel != null ) {
           return cancel_check( column_opt.cancel, ret, done );
         } else {
@@ -115,12 +128,12 @@ var transform_column = function( column_opt ) {
 };
 
 var transform_compiler = function( task ) {
-  var manufacturer = transform_column( task.transform_opts.manufacturer );
-  var code = transform_column( task.transform_opts.code );
-  var name = transform_column( task.transform_opts.name );
-  var count = transform_column( task.transform_opts.count );
-  var price = transform_column( task.transform_opts.price );
-  var delivere = transform_column( task.transform_opts.delivere );
+  var manufacturer = transform_column( task.transform_opts.manufacturer, task );
+  var code = transform_column( task.transform_opts.code, task );
+  var name = transform_column( task.transform_opts.name, task );
+  var count = transform_column( task.transform_opts.count, task );
+  var price = transform_column( task.transform_opts.price, task );
+  var delivere = transform_column( task.transform_opts.delivere, task );
 
   return function (data, encoding, done) {
     var d = [], key;
@@ -131,10 +144,10 @@ var transform_compiler = function( task ) {
     } else {
       d = data;
     }
-    if ( (!d[2] || d[2].length > 300) || (!d[3] || d[3].length > 150) || (!d[4] || d[4].length > 150) || (!d[5] || d[5].length > 150) ) {
-      console.log('###ALERT###');
-      console.log(d);
-    }
+    //if ( (!d[2] || d[2].length > 300) || (!d[3] || d[3].length > 150) || (!d[4] || d[4].length > 150) || (!d[5] || d[5].length > 150) ) {
+    //  console.log('###ALERT###');
+    //  console.log(d);
+    //}
     var t = "\",\"";
     var str = "\"" + manufacturer( d, done ) + t ;
     str += code( d, done ) + t;
@@ -148,17 +161,17 @@ var transform_compiler = function( task ) {
   };
 };
 
-var query = 'COPY prices_wholesale (manufacturer, code, name, count, price, delivere, price_files__id, user__id) FROM STDIN CSV';
+query = 'COPY prices_wholesale (manufacturer, code, name, count, price, delivere, price_files__id, user__id) FROM STDIN CSV';
 
 /*
  * PROCESSED FILE
  */
-var processed_file = async.queue(function (obj, callback) { //todo make better
+var processed_file = async.queue(function ( obj, callback ) { //todo make better
   var toJSON, parser, stream_db;
   if ( /\.(csv)$/i.test( obj.file_name ) ) {
-    toJSON = csv(obj.task.csv_opts);
+    toJSON = csv( obj.task.csv_opts );
   } else {
-    console.log("todo add format", obj.file_name);
+    console.log( "todo add format", obj.file_name );
     return callback();
     //toJSON= csv(obj.task.xls_opts);
   }
@@ -170,26 +183,23 @@ var processed_file = async.queue(function (obj, callback) { //todo make better
   parser._price_files_id = obj.price_files_id;
 
   stream_db = db_client.query(copyFrom(query));
-  //stream_db = fs.createWriteStream('temp/out-test.csv');
-  stream_db.on("error", function (err) {
-    console.log("# ERROR stream_db", err);
+  //stream_db = fs.createWriteStream('temp/out-test-' + obj.task.file_id +'.csv');
+  stream_db.on( "error", function ( err ) {
+    console.log( "# ERROR stream_db", err );
   });
-  stream_db.on("end", function () {
+  stream_db.on( "end", function () {
     callback(); //todo check call task.entry.error
   });
 
   obj.entry
-    .pipe(iconv.decodeStream('win1251'))
-    .pipe(toJSON)
-    .pipe(parser)
-    .pipe(stream_db)
-     .on('finish', function () {
-       console.log('finish', new Date());
-     })
-     .on('error', function (err) {
-       console.log('# ERROR task.entry', err);
-       callback();
-     });
+    .pipe( iconv.decodeStream( obj.task.encoding || "utf8" ) )
+    .pipe( toJSON )
+    .pipe( parser )
+    .pipe( stream_db )
+    .on( 'error', function ( err ) {
+      console.log( '# ERROR task.entry', err );
+      callback();
+    });
 }, 1);
 
 
@@ -220,7 +230,8 @@ var db_preparation = function(user_id, path, file_name, cb) {
 
 var preprocessed_file = async.queue(function ( obj, callback ) {
   var r_get_extension = /\.(.*)$/i;
-  console.log('preprocessed_file', obj.file_name); 
+  var r_get_file_id = /\[(\d*)\]/g;
+  console.log('preprocessed_file', obj.file_name);
   if ( /\.(zip)$/i.test( obj.file_name ) ) {
     fs.createReadStream( config.temp_folder + "/" + obj.file_name )
       .pipe( unzip.Parse() )
@@ -232,6 +243,14 @@ var preprocessed_file = async.queue(function ( obj, callback ) {
           obj.entry = entry;
           obj.file_name = file_name;
           path = obj.task.host + "/" + obj.task.path + "/" + file_name;
+          if ( obj.task.file_id_check ) { //todo remake
+            var id = r_get_file_id.exec( file_name );
+            if ( id && id[1] != null) {
+              obj.task.file_id = id[1];
+            } else {
+              return cb( "NOT GET FILE ID" );
+            }
+          }
           db_preparation( obj.task.user_id, path, file_name, function(err, price_files_id){
             if ( err ) return console.log( err );
             console.log(file_name, 'price_files_id', price_files_id);
@@ -263,9 +282,49 @@ var preprocessed_file = async.queue(function ( obj, callback ) {
 }, 1);
 
 /*
+ * TASK BEGIN
+ */
+task_begin.preprocessed_file_1 = function( url, task, cb ){
+  task.id_to_delivere = {};
+
+  http.get( url, function ( res ) {
+    var toJSON, get_opt;
+    if ( res.statusCode === 200 ) {
+      toJSON = csv( {
+        "headers": true,
+        "delimiter": ";",
+        "objectMode": true
+      } );
+      get_opt = new Transform( { objectMode: true } );
+      get_opt._transform = function ( data, encoding, done ) {
+        task.id_to_delivere[ data.postID ] = data.Days + "-" + data.DaysMax;
+        done();
+      };
+
+      res
+        .pipe( toJSON )
+        .pipe( get_opt )
+        .on( "finish", function () {
+          cb();
+        } )
+        .on( "error", cb );
+    } else {
+      cb("STATUS CODE != 200");
+    }
+  }).on( 'error', cb );
+};
+
+var task_begin_check = function( task, cb ) {
+  if ( task.task_begin && task_begin[task.task_begin.name] != null) {
+    task_begin[task.task_begin.name]( task.task_begin.url, task, cb);
+  } else {
+    cb()
+  }
+};
+
+/*
  * SWITCH TASK and TASK TYPE PROCESSED
  */
-
 var check_file_to_download = function( task, file_name ){
   var r_get_extension = /\.(.*)$/i;
   if ( ~task.file_list.indexOf( file_name ) ) return true;
@@ -295,6 +354,7 @@ var ftp_processed = function( task ) {
       });
     }, function ( err ) {
       if ( err ) return console.log( err );
+      task_all_downloaded = true;
       console.log('all files were downloaded'); //todo add cb
     });
   });
@@ -322,19 +382,25 @@ var http_processed = function (task) {
         console.log("start download", file.name);
 
         http.get( file.href, function ( res ) {
-          var out = fs.createWriteStream( config.temp_folder + "/" + file.name );
-          res.pipe(out);
-          out
-            .on( "error", cb )
-            .on("finish", function(){
-              out.close( function(){
-                preprocessed_file.push({task: task, file_name: file.name});
-                cb();
-              });
-            });
+          var out;
+          if ( res.statusCode === 200 ) {
+            out = fs.createWriteStream( config.temp_folder + "/" + file.name );
+            res.pipe( out );
+            out
+              .on( "error", cb )
+              .on( "finish", function () {
+                out.close( function () {
+                  preprocessed_file.push( { task: task, file_name: file.name } );
+                  cb();
+                } );
+              } );
+          } else {
+            cb( "Not get file: " + file.name );
+          }
         }).on( 'error', cb );
       }, function ( err ) {
         if ( err ) return console.log( err );
+        task_all_downloaded = true;
         console.log('all files were downloaded'); //todo add cb
       });
 
@@ -344,26 +410,31 @@ var http_processed = function (task) {
   });
 };
 
-var task_processed = function(task, cb) {
-  switch (task.type) {
-    case "ftp":
-      ftp_processed(task);
-      break;
-    case "http":
-      http_processed(task);
-      break;
-    default :
-      console.log('http not set');
-      break;
-  }
-  (function(){
-    processed_file.drain = function () {
-      if ( preprocessed_file.idle() ){
-        console.log('###all items have been processed', task.name);
-        cb();
-      }
-    };
-  })(task, cb);
+var task_processed = function( task, cb ) {
+  task_all_downloaded = false;
+  task_begin_check( task, function( err ) {
+    if ( err ) return cb ( err );
+
+    switch (task.type) {
+      case "ftp":
+        ftp_processed(task);
+        break;
+      case "http":
+        http_processed(task);
+        break;
+      default :
+        console.log('http not set');
+        break;
+    }
+    (function(){
+      processed_file.drain = function () {
+        if ( preprocessed_file.idle() && task_all_downloaded ){
+          console.log('###all items have been processed', task.name);
+          cb();
+        }
+      };
+    })(task, cb);
+  });
 };
 
 /*

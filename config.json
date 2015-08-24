@@ -58,8 +58,10 @@
       "user_id" : 11111,
       "encoding": "win1251",
       "file_selector": "a[href^='/files/']",
+      "file_id_check": true,
       "task_begin" : {
-        "preprocessed_file_1" : "tblAvrgSupplDays_30.txt"
+          "name": "preprocessed_file_1",
+          "url" : "http://91.197.10.216/files/tblAvrgSupplDays_30.txt"
       },
       "file_extension_to_download": ["zip"],
       "file_mask": null,
@@ -93,9 +95,7 @@
         },
         "delivere" : {
           "column" : 6,
-          "type" : "regexp",
-          "value": "[^0-9\\-]",
-          "options": "gi"
+          "type" : "id_to_delivere"
         }
       }
     }
