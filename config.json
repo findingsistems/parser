@@ -55,7 +55,7 @@
       "type": "http",
       "host": "http://91.197.10.216",
       "path": "files",
-      "user_id" : 11111,
+      "user_id" : 17,
       "encoding": "win1251",
       "file_selector": "a[href^='/files/']",
       "file_id_check": true,
