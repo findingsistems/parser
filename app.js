@@ -245,12 +245,14 @@ var preprocessed_file = async.queue(function ( obj, callback ) {
         var file_name = entry.path,
           path;
         //var type = entry.type; // 'Directory' or 'File'
+        console.log( 'BBB 1', file_name, ~obj.task.file_extension_to_processed.indexOf( r_get_extension.exec( file_name )[1] ) );
         if ( ~obj.task.file_extension_to_processed.indexOf( r_get_extension.exec( file_name )[1] ) ) { //todo check Directory
           obj.entry = entry;
           obj.file_name = file_name;
           path = obj.task.host + "/" + obj.task.path + "/" + file_name;
           if ( obj.task.file_id_check ) { //todo remake
             var id = r_get_file_id.exec( file_name );
+            console.log( 'BBB 2', file_name, id );
             if ( id && id[1] != null) {
               obj.task.file_id = id[1];
             } else {
@@ -422,6 +424,7 @@ var task_processed = function( task, cb ) {
 
     switch (task.type) {
       case "ftp":
+        return cb();
         ftp_processed(task);
         break;
       case "http":
