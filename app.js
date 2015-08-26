@@ -175,6 +175,7 @@ var processed_file = async.queue(function ( obj, callback ) { //todo make better
     return callback();
     //toJSON= csv(obj.task.xls_opts);
   }
+  console.log('START processed file', obj.file_name, new Date());
 
   parser = new Transform({objectMode: true});
   parser._transform = transform_compiler( obj.task );
@@ -244,14 +245,12 @@ var preprocessed_file = async.queue(function ( obj, callback ) {
         var file_name = entry.path,
           path;
         //var type = entry.type; // 'Directory' or 'File'
-        console.log( 'BBB 1', file_name, ~obj.task.file_extension_to_processed.indexOf( r_get_extension.exec( file_name )[1] ) );
         if ( ~obj.task.file_extension_to_processed.indexOf( r_get_extension.exec( file_name )[1] ) ) { //todo check Directory
           obj.entry = entry;
           obj.file_name = file_name;
           path = obj.task.host + "/" + obj.task.path + "/" + file_name;
           if ( obj.task.file_id_check ) { //todo remake
             var id = r_get_file_id.exec( file_name );
-            console.log( 'BBB 2', file_name, id );
             if ( id && id[1] != null) {
               obj.task.file_id = id[1];
             } else {
@@ -260,7 +259,6 @@ var preprocessed_file = async.queue(function ( obj, callback ) {
           }
           db_preparation( obj.task, path, file_name, function(err, price_files_id){
             if ( err ) return console.log( err );
-            console.log(file_name, 'price_files_id', price_files_id);
             obj.price_files_id = price_files_id;
             processed_file.push( obj );
           });
