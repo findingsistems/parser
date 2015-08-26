@@ -70,7 +70,7 @@
       "csv_opts" : {
         "headers"   : true,
         "delimiter" : ";",
-        "quote"     : "\'",
+        "quote"     : "#",
         "objectMode": true
       },
       "transform_opts" : {
