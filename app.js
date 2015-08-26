@@ -208,29 +208,31 @@ var processed_file = async.queue(function ( obj, callback ) { //todo make better
  * PREPROCESSED FILE
  */
 var db_preparation = function(task, path, file_name, cb) {
-   var to_price_files = [
-     task.user_id,
-     path + "/" + file_name,
-     "" + file_name,
-     "Обработка завершена",
-     1,
-     {"goods_quality": "1", "delivery_time": "1", "discount": "0"},
-     3
-   ];
-   db_client.query('INSERT INTO price_files (user__id, path, name, status, active, info, price_type__id) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id', to_price_files, function (err, res) {
-     if ( err ) return cb( err );
-     if ( !res.rows[0].id ) return cb("### ERROR on get price_files_id");
+  var need_drop_rows = false;
+  var to_price_files = [
+   task.user_id,
+   path + "/" + file_name,
+   "" + file_name,
+   "Обработка завершена",
+   1,
+   {"goods_quality": "1", "delivery_time": "1", "discount": "0"},
+   3
+  ];
+  task.droped_rows || (need_drop_rows = true);
+  task.droped_rows = true;
+  db_client.query('INSERT INTO price_files (user__id, path, name, status, active, info, price_type__id) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id', to_price_files, function (err, res) {
+   if ( err ) return cb( err );
+   if ( !res.rows[0].id ) return cb("### ERROR on get price_files_id");
 
-     if ( task.droped_rows ) {
+   if ( need_drop_rows ) {
+     db_client.query( 'DELETE FROM prices_wholesale WHERE user__id=$1', [ task.user_id ], function ( err ) {
+       if ( err ) return cb( err );
        cb( err, res.rows[ 0 ].id );
-     } else {
-       db_client.query( 'DELETE FROM prices_wholesale WHERE user__id=$1', [ task.user_id ], function ( err ) {
-         if ( err ) return cb( err );
-         task.droped_rows = true;
-         cb( err, res.rows[ 0 ].id );
-       } );
-     }
-   });
+     });
+   } else {
+     cb( err, res.rows[ 0 ].id );
+   }
+  });
   //cb(null, 1234);
 };
 
@@ -245,14 +247,12 @@ var preprocessed_file = async.queue(function ( obj, callback ) {
         var file_name = entry.path,
           path;
         //var type = entry.type; // 'Directory' or 'File'
-        console.log( 'BBB 1', file_name, ~obj.task.file_extension_to_processed.indexOf( r_get_extension.exec( file_name )[1] ) );
         if ( ~obj.task.file_extension_to_processed.indexOf( r_get_extension.exec( file_name )[1] ) ) { //todo check Directory
           obj.entry = entry;
           obj.file_name = file_name;
           path = obj.task.host + "/" + obj.task.path + "/" + file_name;
           if ( obj.task.file_id_check ) { //todo remake
             var id = r_get_file_id.exec( file_name );
-            console.log( 'BBB 2', file_name, id );
             if ( id && id[1] != null) {
               obj.task.file_id = id[1];
             } else {
