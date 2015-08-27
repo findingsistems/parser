@@ -424,7 +424,6 @@ var task_processed = function( task, cb ) {
 
     switch (task.type) {
       case "ftp":
-        return cb();
         ftp_processed(task);
         break;
       case "http":
