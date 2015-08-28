@@ -166,8 +166,10 @@ var transform_compiler = function( task ) {
     str += price( d, done ) + t;
     str += delivere( d, done ) + t;
     str += this._price_files_id + t + this._user_id + "\"";
-    this.push(str + "\n");
-    done();
+    if ( this._writableState.writing ) { //todo make better
+      this.push(str + "\n");
+      done();
+    }    
   };
 };
 
