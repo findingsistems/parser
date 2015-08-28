@@ -83,7 +83,8 @@
           "type" : "number_latter"
         },
         "name" : {
-          "column" : 2
+          "column" : 2,
+          "type": "delete_quote"
         },
         "count" : {
           "column" : 5,

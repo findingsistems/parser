@@ -91,6 +91,16 @@ var transform_column = function( column_opt, task ) {
         }
       };
       break;
+    case "delete_quote":
+      return function( data, done ){
+        var ret = data[column_opt.column].replace( /[\"\']/gi, "" );
+        if ( column_opt.cancel != null ) {
+          return cancel_check( column_opt.cancel, ret, done );
+        } else {
+          return ret;
+        }
+      };
+      break;
     case "to_int":
       return function( data, done ){
         var ret = data[column_opt.column ].split( ','  )[0];
@@ -402,7 +412,8 @@ var http_processed = function (task) {
                 } );
               } );
           } else {
-            cb( "Not get file: " + file.name );
+            console.error( "Not get file: " + file.name );
+            cb();
           }
         }).on( 'error', cb );
       }, function ( err ) {
