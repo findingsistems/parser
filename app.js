@@ -195,10 +195,11 @@ var processed_file = async.queue(function ( obj, callback ) { //todo make better
 
   stream_db = db_client.query(copyFrom(query));
   //stream_db = fs.createWriteStream('temp/out-test-' + obj.task.file_id +'.csv');
-  stream_db.on( "error", function ( err ) {
-    console.log( "# ERROR stream_db", err );
-  });
+  //stream_db.on( "error", function ( err ) {
+  //  console.log( "# ERROR stream_db", err );
+  //});
   stream_db.on( "end", function () {
+    console.log('END processed file', obj.file_name, new Date());
     callback(); //todo check call task.entry.error
   });
 
@@ -208,7 +209,8 @@ var processed_file = async.queue(function ( obj, callback ) { //todo make better
     .pipe( parser )
     .pipe( stream_db )
     .on( 'error', function ( err ) {
-      console.log( '# ERROR task.entry', err );
+      console.log( '# ERROR task.entry', obj.file_name );
+      console.error( err );
       callback();
     });
 }, 1);
@@ -266,7 +268,7 @@ var preprocessed_file = async.queue(function ( obj, callback ) {
             if ( id && id[1] != null) {
               obj.task.file_id = id[1];
             } else {
-              return cb( "NOT GET FILE ID" );
+              return callback( "NOT GET FILE ID" );
             }
           }
           db_preparation( obj.task, path, file_name, function(err, price_files_id){
@@ -415,7 +417,10 @@ var http_processed = function (task) {
             console.error( "Not get file: " + file.name );
             cb();
           }
-        }).on( 'error', cb );
+        }).on( 'error', function(err){
+          console.error( 'HTTP GET ERROR', err );
+          cb();
+        });
       }, function ( err ) {
         if ( err ) return console.log( err );
         task_all_downloaded = true;
