@@ -195,15 +195,19 @@ var processed_file = async.queue(function ( obj, callback ) { //todo make better
   parser._user_id = obj.task.user_id;
   parser._price_files_id = obj.price_files_id;
 
-  stream_db = db_client.query(copyFrom(query));
-  //stream_db = fs.createWriteStream('temp/out-test-' + obj.task.file_id +'.csv');
-  //stream_db.on( "error", function ( err ) {
-  //  console.log( "# ERROR stream_db", err );
+  //stream_db = db_client.query(copyFrom(query));
+  //stream_db.on( "end", function () {
+  //  console.log('END processed file', obj.file_name, new Date());
+  //  callback(); //todo check call task.entry.error
   //});
-  stream_db.on( "end", function () {
+  stream_db = fs.createWriteStream('temp/out/' + obj.file_name +'.csv');
+  stream_db.on( "finish", function ( ) {
     console.log('END processed file', obj.file_name, new Date());
     callback(); //todo check call task.entry.error
   });
+  //stream_db.on( "error", function ( err ) {
+  //  console.log( "# ERROR stream_db", err );
+  //});
 
   obj.entry
     .pipe( iconv.decodeStream( obj.task.encoding || "utf8" ) )
