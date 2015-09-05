@@ -173,7 +173,7 @@ var transform_compiler = function( task ) {
   };
 };
 
-query = 'COPY prices_wholesale (manufacturer, code, name, count, price, delivere, price_files__id, user__id) FROM STDIN CSV';
+query = 'COPY prices_wholesale_new (manufacturer, code, name, count, price, delivere, price_files__id, user__id) FROM STDIN CSV';
 
 /*
  * PROCESSED FILE
@@ -195,19 +195,19 @@ var processed_file = async.queue(function ( obj, callback ) { //todo make better
   parser._user_id = obj.task.user_id;
   parser._price_files_id = obj.price_files_id;
 
-  //stream_db = db_client.query(copyFrom(query));
-  //stream_db.on( "end", function () {
-  //  console.log('END processed file', obj.file_name, new Date());
-  //  callback(); //todo check call task.entry.error
-  //});
-  stream_db = fs.createWriteStream('temp/out/' + obj.file_name +'.csv');
-  stream_db.on( "finish", function ( ) {
+  stream_db = db_client.query(copyFrom(query));
+  stream_db.on( "end", function () {
     console.log('END processed file', obj.file_name, new Date());
     callback(); //todo check call task.entry.error
   });
-  //stream_db.on( "error", function ( err ) {
-  //  console.log( "# ERROR stream_db", err );
+  //stream_db = fs.createWriteStream('temp/out/' + obj.file_name +'.csv');
+  //stream_db.on( "finish", function ( ) {
+  //  console.log('END processed file', obj.file_name, new Date());
+  //  callback();
   //});
+  stream_db.on( "error", function ( err ) {
+    console.log( "# ERROR stream_db", err );
+  });
 
   obj.entry
     .pipe( iconv.decodeStream( obj.task.encoding || "utf8" ) )
@@ -243,7 +243,7 @@ var db_preparation = function(task, path, file_name, cb) {
    if ( !res.rows[0].id ) return cb("### ERROR on get price_files_id");
 
    if ( need_drop_rows ) {
-     db_client.query( 'DELETE FROM prices_wholesale WHERE user__id=$1', [ task.user_id ], function ( err ) {
+     db_client.query( 'DELETE FROM prices_wholesale_new WHERE user__id=$1', [ task.user_id ], function ( err ) {
        if ( err ) return cb( err );
        cb( err, res.rows[ 0 ].id );
      });
