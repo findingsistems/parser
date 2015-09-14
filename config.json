@@ -70,8 +70,8 @@
       "csv_opts" : {
         "headers"   : true,
         "delimiter" : ";",
-        "quote"     : "~",
-        "escape"    : "~",
+        "quote"     : "\u2605",
+        "escape"    : "\u2605",
         "objectMode": true
       },
       "transform_opts" : {
